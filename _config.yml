@@ -1,0 +1,2 @@
+# Lets GitHub Pages publish the .well-known folder that Google Play needs.
+include: [".well-known"]

@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0c0a26">
+<meta name="description" content="Fling your comet between planet orbits, collect stardust and outrun the rising void.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif}</style>
+<title>Comet Hop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;800&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one full-screen canvas, HUD and menus float over it. Deliberately single dark theme (night sky). */
+:root {
+  color-scheme: dark;
+  --sky: #0c0a26;
+  --ink: #f3eefe;
+  --dim: #a59fcf;
+  --comet: #ffd36b;
+  --void: #ff3d8b;
+  --panel: rgba(18, 14, 52, 0.86);
+  --display: "Unbounded", "Arial Black", system-ui, sans-serif;
+  --mono: "DM Mono", ui-monospace, Menlo, monospace;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--sky); color: var(--ink); overflow: hidden;
+  font-family: var(--mono); touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 2; pointer-events: none;
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.score { font-family: var(--display); font-weight: 800; font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; }
+.sub { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin-top: 6px; }
+.right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.dust { font-size: 14px; color: var(--comet); font-variant-numeric: tabular-nums; }
+.iconbtn {
+  pointer-events: auto; background: rgba(255,255,255,.08); color: var(--ink); border: 1px solid rgba(255,255,255,.18);
+  border-radius: 999px; font: 500 12px var(--mono); padding: 6px 12px; cursor: pointer;
+}
+.overlay {
+  position: fixed; inset: 0; z-index: 3; display: grid; place-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px;
+}
+.card {
+  width: min(360px, 100%); background: var(--panel); border: 1px solid rgba(255,255,255,.12);
+  border-radius: 20px; padding: 28px 22px; text-align: center; display: flex; flex-direction: column; gap: 14px;
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+h1 { font-family: var(--display); font-weight: 800; font-size: 44px; line-height: .95; margin: 0; letter-spacing: -.02em; text-wrap: balance; }
+h1 em { font-style: normal; color: var(--comet); }
+h2 { font-family: var(--display); font-weight: 800; font-size: 28px; margin: 0; }
+p { margin: 0; color: var(--dim); line-height: 1.5; font-size: 14px; }
+.big { font-family: var(--display); font-weight: 800; font-size: 64px; line-height: 1; color: var(--comet); font-variant-numeric: tabular-nums; }
+.btn {
+  font: 800 16px var(--display); letter-spacing: .02em; padding: 15px 18px; border-radius: 14px; border: 0; cursor: pointer;
+  background: var(--comet); color: #1b1240; width: 100%;
+}
+.btn.alt { background: transparent; color: var(--ink); border: 1px solid rgba(255,255,255,.25); font-size: 14px; }
+.btn.ad { background: var(--void); color: #fff; }
+.btn:focus-visible, .iconbtn:focus-visible, .skin:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.row { display: flex; gap: 10px; }
+.skins { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.skin {
+  aspect-ratio: 1; max-width: 100%; border-radius: 12px; border: 2px solid transparent; background: rgba(255,255,255,.06);
+  display: grid; place-items: center; cursor: pointer; color: var(--dim); font: 500 11px var(--mono); padding: 4px; gap: 2px;
+}
+.skin.on { border-color: var(--comet); }
+.skin i { width: 18px; height: 18px; border-radius: 50%; display: block; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  background: var(--panel); padding: 10px 16px; border-radius: 999px; font-size: 13px; z-index: 4; white-space: nowrap;
+}
+.k { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); }
+@media (prefers-reduced-motion: reduce) { .card { backdrop-filter: none; -webkit-backdrop-filter: none; } }
+</style>
+
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="hud">
+  <div><div class="score" id="score">0</div><div class="sub" id="best">Best 0</div></div>
+  <div class="right">
+    <div class="dust" id="dust">✦ 0</div>
+    <button class="iconbtn" id="mute" type="button">Sound on</button>
+  </div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <h1>Comet<br><em>Hop</em></h1>
+    <p>Tap to fling your comet off its planet. Catch the next orbit, grab stardust, and keep climbing before the void swallows you.</p>
+    <button class="btn" id="play" type="button">Tap to play</button>
+    <button class="btn alt" id="openShop" type="button">Comet skins</button>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="k">Score</div>
+    <div class="big" id="final">0</div>
+    <p id="overMsg">Best 0</p>
+    <button class="btn ad" id="revive" type="button">Revive (once per run)</button>
+    <button class="btn" id="again" type="button">Play again</button>
+    <button class="btn alt" id="openShop2" type="button">Comet skins</button>
+  </div>
+</div>
+
+<div class="overlay" id="shop" hidden>
+  <div class="card">
+    <h2>Skins</h2>
+    <p id="shopDust">You have ✦ 0 stardust</p>
+    <div class="skins" id="skinGrid"></div>
+    <button class="btn alt" id="closeShop" type="button">Done</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+  const COL = 420; // play column width in world units
+
+  // ---------- persistent save (per-device) ----------
+  const save = { best: 0, bank: 0, skin: 0, owned: [0], muted: false };
+  try { Object.assign(save, JSON.parse(localStorage.getItem('comethop') || '{}')); } catch (e) {}
+  const persist = () => { try { localStorage.setItem('comethop', JSON.stringify(save)); } catch (e) {} };
+
+  const SKINS = [
+    { name: 'Ember', core: '#ffd36b', tail: '255,190,80', cost: 0 },
+    { name: 'Frost', core: '#9ff0ff', tail: '120,220,255', cost: 40 },
+    { name: 'Rose', core: '#ff9ccf', tail: '255,110,180', cost: 80 },
+    { name: 'Lime', core: '#c8ff7a', tail: '160,255,90', cost: 150 },
+    { name: 'Violet', core: '#c9a6ff', tail: '170,120,255', cost: 250 },
+    { name: 'Solar', core: '#ffffff', tail: '255,240,200', cost: 400 },
+    { name: 'Ruby', core: '#ff6b6b', tail: '255,80,80', cost: 600 },
+    { name: 'Aurora', core: '#7affc8', tail: '90,255,190', cost: 900 },
+  ];
+
+  // ---------- sizing ----------
+  let W = 0, H = 0, scale = 1, LW = COL, LH = 700, colL = 0, dpr = 1;
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    scale = W / H < 0.68 ? W / COL : H / 760;
+    LW = W / scale; LH = H / scale; colL = (LW - COL) / 2;
+  }
+  addEventListener('resize', resize); resize();
+
+  // ---------- audio ----------
+  let ac = null;
+  function tone(f1, f2, dur, type = 'sine', vol = 0.12) {
+    if (save.muted) return;
+    try {
+      ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+      const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+      g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur);
+    } catch (e) {}
+  }
+
+  // ---------- background stars ----------
+  const stars = Array.from({ length: 140 }, () => ({ x: Math.random(), y: Math.random(), z: 0.15 + Math.random() * 0.6, s: Math.random() * 1.6 + 0.4 }));
+
+  // ---------- game state ----------
+  const HUES = [[255, 140, 90], [110, 200, 255], [190, 130, 255], [120, 230, 170], [255, 120, 170]];
+  // galaxies: the sky, stars and planet colours change every PER_GAL planets
+  const GALAXIES = [
+    { name: 'Milky Way', top: [12, 10, 38], bot: [30, 17, 80], star: [255, 255, 255], hues: HUES },
+    { name: 'Andromeda', top: [5, 16, 38], bot: [10, 58, 92], star: [190, 240, 255], hues: [[90, 220, 255], [140, 170, 255], [120, 255, 220], [200, 230, 255], [80, 160, 255]] },
+    { name: 'Nebula Rift', top: [28, 6, 30], bot: [88, 18, 62], star: [255, 210, 230], hues: [[255, 110, 160], [255, 170, 110], [230, 120, 255], [255, 220, 140], [255, 90, 120]] },
+    { name: 'Emerald Drift', top: [4, 22, 20], bot: [10, 66, 50], star: [210, 255, 220], hues: [[120, 255, 160], [200, 255, 110], [90, 220, 200], [255, 230, 120], [150, 255, 220]] },
+    { name: 'Ember Core', top: [30, 9, 4], bot: [92, 30, 10], star: [255, 230, 190], hues: [[255, 170, 60], [255, 110, 70], [255, 220, 120], [255, 140, 140], [230, 200, 255]] },
+  ];
+  const PER_GAL = 20;
+  const galOf = i => Math.floor(i / PER_GAL) % GALAXIES.length;
+  const mix = (a, b, f) => a.map((v, k) => Math.round(v + (b[k] - v) * f));
+  let state = 'title', planets, dusts, parts, texts, P, camY, voidY, score, dust, combo, maxIdx, t, revived, overAt, skyG = 0, galShown = 0;
+
+  function newPlanet(i, y, x) {
+    let kind = i < 4 ? 'plain' : (Math.random() < Math.min(0.35, i * 0.012) ? 'fragile' : (Math.random() < Math.min(0.4, (i - 6) * 0.02) ? 'moving' : 'plain'));
+    if (i >= 8 && kind === 'plain' && Math.random() < 0.2) kind = 'boost'; // slingshot planet
+    const r = 16 + Math.random() * 16;
+    return { i, x, bx: x, y, r, ring: r + 40, kind, hue: GALAXIES[galOf(i)].hues[i % 5], amp: 40 + Math.random() * 60, ph: Math.random() * 6, sp: 0.6 + Math.random() * 0.8, crack: 0, dead: false };
+  }
+  function addNext() {
+    const last = planets[planets.length - 1], i = last.i + 1;
+    const gap = 150 + Math.random() * 70 + Math.min(i, 40);
+    let x; do { x = colL + 60 + Math.random() * (COL - 120); } while (Math.abs(x - last.bx) < 50);
+    const p = newPlanet(i, last.y - gap, x);
+    planets.push(p);
+    const n = Math.random() < 0.75 ? 1 + (Math.random() * 3 | 0) : 0;
+    for (let k = 1; k <= n; k++) {
+      const f = k / (n + 1);
+      dusts.push({ x: last.bx + (x - last.bx) * f + (Math.random() - .5) * 60, y: last.y + (p.y - last.y) * f, got: false, ph: Math.random() * 6 });
+    }
+  }
+
+  function reset() {
+    planets = [newPlanet(0, 0, colL + COL / 2)];
+    planets[0].x = planets[0].bx = colL + COL / 2;
+    dusts = []; parts = []; texts = [];
+    for (let k = 0; k < 6; k++) addNext();
+    P = { mode: 'orbit', pl: planets[0], a: -Math.PI / 2, dir: 1, x: 0, y: 0, vx: 0, vy: 0, from: null, fly: 0, held: 0, trail: [] };
+    camY = -LH * 0.7; voidY = 320; score = 0; dust = 0; combo = 0; maxIdx = 0; t = 0; revived = false; skyG = 0; galShown = 0;
+    placeOnOrbit();
+    updHud();
+  }
+  function placeOnOrbit() { P.x = P.pl.x + Math.cos(P.a) * P.pl.ring; P.y = P.pl.y + Math.sin(P.a) * P.pl.ring; }
+
+  function launch() {
+    if (P.mode !== 'orbit') return;
+    const boost = P.pl.kind === 'boost', sp = boost ? 650 : 430;
+    P.vx = -Math.sin(P.a) * P.dir * sp; P.vy = Math.cos(P.a) * P.dir * sp;
+    P.from = P.pl; P.mode = 'fly'; P.fly = 0;
+    combo = P.held < 0.9 ? combo + 1 : 0;
+    tone(320, 640, 0.12, 'triangle', 0.08);
+    if (boost) { float(P.x, P.y - 18, 'BOOST!', '#7affc8'); burst(P.x, P.y, '122,255,200', 12, 140); tone(500, 1400, 0.2, 'sawtooth', 0.05); }
+  }
+
+  function burst(x, y, col, n = 14, sp = 160) {
+    for (let k = 0; k < n; k++) {
+      const a = Math.random() * 6.283, s = sp * (0.3 + Math.random());
+      parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.6 + Math.random() * 0.4, col });
+    }
+  }
+  const float = (x, y, s, col = '#fff') => texts.push({ x, y, s, col, life: 1 });
+
+  function die() {
+    if (state !== 'play') return;
+    state = 'over'; overAt = performance.now();
+    burst(P.x, P.y, '255,61,139', 30, 220);
+    tone(300, 60, 0.5, 'sawtooth', 0.1);
+    save.bank += dust;
+    const nb = score > save.best; if (nb) save.best = score; persist();
+    setTimeout(() => {
+      $('final').textContent = score;
+      $('overMsg').textContent = nb ? 'New best!  +✦ ' + dust + ' stardust banked' : 'Best ' + save.best + '  ·  +✦ ' + dust + ' banked';
+      $('revive').hidden = revived;
+      $('over').hidden = false; updHud();
+    }, 650);
+  }
+
+  function revive() {
+    revived = true; save.bank -= dust; persist();
+    const target = planets.filter(p => !p.dead && p.y > camY - 40 && p.y < camY + LH).sort((a, b) => b.i - a.i)[0] || planets.find(p => !p.dead);
+    P.mode = 'orbit'; P.pl = target; P.a = -Math.PI / 2; P.held = 0; P.trail = []; target.crack = 0;
+    placeOnOrbit();
+    voidY = Math.max(target.y + 360, voidY + 200);
+    $('over').hidden = true; state = 'play';
+    toast('Revived! Keep climbing');
+  }
+
+  // ---------- update ----------
+  function update(dt) {
+    t += dt;
+    for (const p of planets) if (p.kind === 'moving') {
+      p.x = p.bx + Math.sin(t * p.sp + p.ph) * p.amp;
+      p.x = Math.max(colL + p.ring, Math.min(colL + COL - p.ring, p.x));
+    }
+    if (state === 'play') {
+      if (P.mode === 'orbit') {
+        const pl = P.pl, w = (125 + Math.min(score, 60) * 1.5) / pl.ring * (pl.kind === 'boost' ? 1.3 : 1);
+        P.a += w * P.dir * dt; P.held += dt; placeOnOrbit();
+        if (pl.kind === 'fragile') {
+          pl.crack += dt;
+          if (pl.crack > 2.2) { pl.dead = true; burst(pl.x, pl.y, '255,170,80', 24); tone(200, 80, 0.3, 'square', 0.06); launch(); }
+        }
+      } else {
+        // gentle gravity pulls the comet toward nearby planets, so near-misses still land
+        for (const pl of planets) {
+          if (pl.dead || pl === P.from) continue;
+          const dx = pl.x - P.x, dy = pl.y - P.y, d = Math.hypot(dx, dy);
+          if (d < pl.ring * 3) { const a = 1100 * (pl.ring / d) ** 2; P.vx += dx / d * a * dt; P.vy += dy / d * a * dt; }
+        }
+        P.x += P.vx * dt; P.y += P.vy * dt; P.fly += dt;
+        for (const pl of planets) {
+          if (pl.dead) continue;
+          const dx = P.x - pl.x, dy = P.y - pl.y, d = Math.hypot(dx, dy);
+          if (pl === P.from) { if (d > pl.ring + 4) P.from = null; continue; }
+          if (d < pl.ring) {
+            P.mode = 'orbit'; P.pl = pl; P.a = Math.atan2(dy, dx); P.held = 0;
+            P.dir = (dx * P.vy - dy * P.vx) >= 0 ? 1 : -1;
+            placeOnOrbit();
+            burst(P.x, P.y, pl.hue.join(','), 10, 90);
+            if (pl.i > maxIdx) {
+              const skip = pl.i - maxIdx - 1, bonus = 1 + skip * 2 + (combo >= 2 ? Math.min(combo - 1, 4) : 0);
+              score += bonus; maxIdx = pl.i;
+              if (skip) float(pl.x, pl.y - pl.ring - 10, 'SKIP +' + (1 + skip * 2), '#ffd36b');
+              else if (combo >= 2) float(pl.x, pl.y - pl.ring - 10, 'QUICK x' + combo, '#9ff0ff');
+              tone(440 + Math.min(combo, 8) * 60, 880 + Math.min(combo, 8) * 120, 0.15, 'sine', 0.1);
+            } else tone(380, 500, 0.08);
+            break;
+          }
+        }
+        if (P.mode === 'fly' && (P.x < colL - 40 || P.x > colL + COL + 40 || P.y < camY - 80 || P.fly > 2.6)) die();
+      }
+      // galaxy change
+      const gNow = Math.floor(maxIdx / PER_GAL);
+      if (gNow > galShown) { galShown = gNow; toast('Entering ' + GALAXIES[gNow % GALAXIES.length].name); tone(220, 880, 0.6, 'sine', 0.08); }
+      skyG += (gNow - skyG) * Math.min(1, dt * 1.2);
+      // stardust
+      for (const d of dusts) if (!d.got && Math.hypot(d.x - P.x, d.y - P.y) < 20) {
+        d.got = true; dust++; score++; burst(d.x, d.y, '255,211,107', 8, 80); tone(1200, 1800, 0.08, 'sine', 0.06);
+      }
+      // trail
+      P.trail.push({ x: P.x, y: P.y }); if (P.trail.length > 22) P.trail.shift();
+      // camera + void
+      const target = P.y - LH * 0.62;
+      camY += (Math.min(camY, target) - camY) * Math.min(1, dt * 4);
+      if (target > camY + LH * 0.1) camY += (target - camY - LH * 0.1) * dt; // gentle follow down if you fall back
+      voidY -= (16 + Math.min(score, 80) * 0.75) * dt;
+      voidY = Math.min(voidY, camY + LH + 40);
+      if (P.y > voidY - 4) die();
+      while (planets[planets.length - 1].y > camY - 500) addNext();
+      planets = planets.filter(p => p.y < voidY + 300 || p === P.pl);
+      dusts = dusts.filter(d => d.y < voidY + 300);
+      updHud();
+    } else if (state === 'title') {
+      P.a += 1.2 * dt; placeOnOrbit(); P.trail.push({ x: P.x, y: P.y }); if (P.trail.length > 22) P.trail.shift();
+    }
+    for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life -= dt; }
+    parts = parts.filter(p => p.life > 0);
+    for (const x of texts) { x.y -= 30 * dt; x.life -= dt; }
+    texts = texts.filter(x => x.life > 0);
+  }
+
+  // ---------- draw ----------
+  function draw() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const gi = Math.floor(skyG), gf = skyG - gi;
+    const ga = GALAXIES[gi % GALAXIES.length], gb = GALAXIES[(gi + 1) % GALAXIES.length];
+    const top = mix(ga.top, gb.top, gf), bot = mix(ga.bot, gb.bot, gf), st = mix(ga.star, gb.star, gf);
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `rgb(${top})`); g.addColorStop(1, `rgb(${bot})`);
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    // parallax stars
+    ctx.fillStyle = `rgb(${st})`;
+    for (const s of stars) {
+      const y = (((s.y * H - camY * scale * s.z * 0.25) % H) + H) % H;
+      ctx.globalAlpha = 0.25 + s.z * 0.9;
+      ctx.fillRect(s.x * W, y, s.s, s.s);
+    }
+    ctx.globalAlpha = 1;
+
+    // world space
+    ctx.setTransform(dpr * scale, 0, 0, dpr * scale, 0, -camY * dpr * scale);
+
+    // column edges
+    ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(colL, camY); ctx.lineTo(colL, camY + LH);
+    ctx.moveTo(colL + COL, camY); ctx.lineTo(colL + COL, camY + LH);
+    ctx.stroke();
+
+    // planets
+    for (const p of planets) {
+      if (p.dead || p.y < camY - 120 || p.y > camY + LH + 120) continue;
+      const [r, g2, b] = p.hue;
+      const active = P.mode === 'orbit' && P.pl === p && state !== 'over';
+      let sx = 0;
+      if (p.kind === 'fragile' && p.crack > 1.2) sx = Math.sin(t * 60) * (p.crack - 1.2) * 2.2;
+      const x = p.x + sx, y = p.y;
+
+      // orbit ring
+      ctx.setLineDash([4, 8]); ctx.lineWidth = 1.5;
+      ctx.strokeStyle = `rgba(${r},${g2},${b},${active ? 0.6 : 0.28})`;
+      ctx.beginPath(); ctx.arc(x, y, p.ring, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // glow
+      ctx.fillStyle = `rgba(${r},${g2},${b},0.12)`;
+      ctx.beginPath(); ctx.arc(x, y, p.r * 1.7, 0, Math.PI * 2); ctx.fill();
+
+      // body
+      const rg = ctx.createRadialGradient(x - p.r * 0.35, y - p.r * 0.35, p.r * 0.1, x, y, p.r);
+      rg.addColorStop(0, `rgb(${Math.min(255, r + 70)},${Math.min(255, g2 + 70)},${Math.min(255, b + 70)})`);
+      rg.addColorStop(0.6, `rgb(${r},${g2},${b})`);
+      rg.addColorStop(1, `rgb(${r * 0.45 | 0},${g2 * 0.45 | 0},${b * 0.45 | 0})`);
+      ctx.fillStyle = rg; ctx.beginPath(); ctx.arc(x, y, p.r, 0, Math.PI * 2); ctx.fill();
+
+      if (p.kind === 'moving') {
+        // a tilted band marks drifting planets
+        ctx.strokeStyle = `rgba(${r},${g2},${b},0.7)`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(x, y, p.r * 1.55, p.r * 0.45, -0.35, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (p.kind === 'boost') {
+        // spinning chevrons mark slingshot planets
+        ctx.fillStyle = 'rgba(122,255,200,.9)';
+        for (let k = 0; k < 6; k++) {
+          const a = t * 1.8 + k * Math.PI / 3;
+          ctx.save(); ctx.translate(x + Math.cos(a) * (p.r + 11), y + Math.sin(a) * (p.r + 11)); ctx.rotate(a + Math.PI / 2);
+          ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-3, -4.5); ctx.lineTo(-1, 0); ctx.lineTo(-3, 4.5); ctx.closePath(); ctx.fill();
+          ctx.restore();
+        }
+      }
+      if (p.kind === 'fragile') {
+        // cracks spread as the planet weakens
+        const k = Math.min(1, 0.25 + p.crack / 2.2);
+        ctx.strokeStyle = `rgba(20,8,30,${k})`; ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(x - p.r * 0.6, y - p.r * 0.2); ctx.lineTo(x - p.r * 0.1, y + p.r * 0.05); ctx.lineTo(x + p.r * 0.2, y - p.r * 0.45);
+        ctx.moveTo(x - p.r * 0.1, y + p.r * 0.05); ctx.lineTo(x + p.r * 0.05, y + p.r * 0.6);
+        ctx.moveTo(x + p.r * 0.2, y - p.r * 0.45); ctx.lineTo(x + p.r * 0.65, y - p.r * 0.1);
+        ctx.stroke();
+      }
+    }
+
+    // stardust
+    for (const d of dusts) {
+      if (d.got || d.y < camY - 40 || d.y > camY + LH + 40) continue;
+      const s = 6 * (1 + Math.sin(t * 4 + d.ph) * 0.2);
+      ctx.fillStyle = 'rgba(255,211,107,.18)';
+      ctx.beginPath(); ctx.arc(d.x, d.y, s * 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd36b';
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y - s); ctx.quadraticCurveTo(d.x, d.y, d.x + s, d.y);
+      ctx.quadraticCurveTo(d.x, d.y, d.x, d.y + s); ctx.quadraticCurveTo(d.x, d.y, d.x - s, d.y);
+      ctx.quadraticCurveTo(d.x, d.y, d.x, d.y - s); ctx.fill();
+    }
+
+    // launch hint while orbiting
+    if (state === 'play' && P.mode === 'orbit') {
+      const dx = -Math.sin(P.a) * P.dir, dy = Math.cos(P.a) * P.dir;
+      ctx.fillStyle = 'rgba(255,255,255,.35)';
+      for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.arc(P.x + dx * k * 16, P.y + dy * k * 16, 2.2 - k * 0.4, 0, Math.PI * 2); ctx.fill(); }
+    }
+
+    // comet trail + head
+    const skin = SKINS[save.skin] || SKINS[0];
+    ctx.lineCap = 'round';
+    for (let k = 1; k < P.trail.length; k++) {
+      const a = k / P.trail.length;
+      ctx.strokeStyle = `rgba(${skin.tail},${a * 0.7})`; ctx.lineWidth = 2 + a * 9;
+      ctx.beginPath(); ctx.moveTo(P.trail[k - 1].x, P.trail[k - 1].y); ctx.lineTo(P.trail[k].x, P.trail[k].y); ctx.stroke();
+    }
+    if (state !== 'over') {
+      ctx.fillStyle = `rgba(${skin.tail},.28)`;
+      ctx.beginPath(); ctx.arc(P.x, P.y, 15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = skin.core;
+      ctx.beginPath(); ctx.arc(P.x, P.y, 7, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // the void
+    const vg = ctx.createLinearGradient(0, voidY - 90, 0, voidY + 60);
+    vg.addColorStop(0, 'rgba(255,61,139,0)');
+    vg.addColorStop(0.6, 'rgba(255,61,139,.5)');
+    vg.addColorStop(1, 'rgba(40,4,40,1)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(colL - LW, voidY - 90, LW * 3, LH + 600);
+    ctx.strokeStyle = 'rgba(255,61,139,.9)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = colL - LW; x <= colL + COL + LW; x += 12) {
+      const y = voidY + Math.sin(x * 0.04 + t * 3) * 4 + Math.sin(x * 0.11 - t * 5) * 2;
+      x === colL - LW ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // particles
+    for (const p of parts) {
+      ctx.fillStyle = `rgba(${p.col},${Math.max(0, p.life)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // floating text
+    ctx.textAlign = 'center'; ctx.font = '800 14px Unbounded, "Arial Black", sans-serif';
+    for (const x of texts) {
+      ctx.globalAlpha = Math.max(0, x.life); ctx.fillStyle = x.col; ctx.fillText(x.s, x.x, x.y);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- HUD, toast, shop ----------
+  function updHud() {
+    $('score').textContent = score;
+    $('best').textContent = 'Best ' + save.best;
+    $('dust').textContent = '✦ ' + (save.bank + (state === 'play' ? dust : 0));
+    $('mute').textContent = save.muted ? 'Sound off' : 'Sound on';
+  }
+
+  let toastTimer;
+  function toast(s) {
+    const el = $('toast');
+    el.textContent = s; el.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 1600);
+  }
+
+  let shopFrom = 'title';
+  function buildShop() {
+    $('shopDust').textContent = 'You have ✦ ' + save.bank + ' stardust';
+    const grid = $('skinGrid'); grid.innerHTML = '';
+    SKINS.forEach((s, i) => {
+      const owned = save.owned.includes(i);
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'skin' + (save.skin === i ? ' on' : '');
+      b.setAttribute('aria-label', owned ? 'Use ' + s.name : 'Buy ' + s.name + ' for ' + s.cost + ' stardust');
+      const dot = document.createElement('i');
+      dot.style.background = s.core; dot.style.boxShadow = `0 0 10px rgb(${s.tail})`;
+      const label = document.createElement('span');
+      label.textContent = owned ? s.name : '✦ ' + s.cost;
+      b.append(dot, label);
+      b.addEventListener('click', () => {
+        if (owned) save.skin = i;
+        else if (save.bank >= s.cost) {
+          save.bank -= s.cost; save.owned.push(i); save.skin = i;
+          tone(600, 1200, 0.2, 'triangle', 0.08); toast('Unlocked ' + s.name);
+        } else { toast('Need ✦ ' + (s.cost - save.bank) + ' more'); return; }
+        persist(); buildShop(); updHud();
+      });
+      grid.append(b);
+    });
+  }
+  function openShop(from) {
+    shopFrom = from; $(from).hidden = true;
+    buildShop(); $('shop').hidden = false;
+  }
+
+  // ---------- controls ----------
+  function start() {
+    reset(); state = 'play';
+    $('title').hidden = true; $('over').hidden = true; $('shop').hidden = true;
+    tone(260, 520, 0.15, 'triangle', 0.08);
+    updHud();
+  }
+
+  $('play').addEventListener('click', start);
+  $('again').addEventListener('click', start);
+  $('revive').addEventListener('click', revive);
+  $('openShop').addEventListener('click', () => openShop('title'));
+  $('openShop2').addEventListener('click', () => openShop('over'));
+  $('closeShop').addEventListener('click', () => { $('shop').hidden = true; $(shopFrom).hidden = false; updHud(); });
+  $('mute').addEventListener('click', () => { save.muted = !save.muted; persist(); updHud(); });
+
+  addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    if (state === 'play') launch();
+  });
+  addEventListener('keydown', e => {
+    if (e.code !== 'Space' && e.code !== 'ArrowUp') return;
+    e.preventDefault();
+    if (state === 'play') launch();
+    else if (state === 'title' && $('shop').hidden) start();
+  });
+
+  // ---------- loop ----------
+  reset();
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000); last = now;
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+</script>
+</body>
+</html>
